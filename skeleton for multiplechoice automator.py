@@ -33,8 +33,8 @@ options.add_argument("--disable-blink-features=AutomationControlled")
 options.add_argument("start-maximized")
 driver = uc.Chrome(options=options)
 
-# open the login page
-driver.get("https://smartrevise.online/login")
+# open your login page
+driver.get("your.webpage")
 
 # log in to the website
 username = driver.find_element(By.ID, "username")  # replace with actual id
