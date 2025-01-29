@@ -11,6 +11,15 @@ openai.api_key = "your_openai_api_key"
 # captcha-solving service api key
 CAPTCHA_API_KEY = "your_2captcha_api_key"  # replace with your 2captcha API key
 
+# settings
+TOTAL_QUESTIONS = 20  # number of questions to answer
+CORRECT_ANSWERS = 15  # number of correct answers
+INCORRECT_ANSWERS = TOTAL_QUESTIONS - CORRECT_ANSWERS  # incorrect answers count
+
+# track progress
+answered_correctly = 0
+answered_incorrectly = 0
+
 # generate the correct answer using openai
 def generate_answer(question, options):
     prompt = f"""
@@ -120,7 +129,9 @@ adaptive_delay("click")
 # find questions on the page
 question_containers = driver.find_elements(By.CLASS_NAME, "question-container-class")  # replace with actual class
 
-for question_index, question_container in enumerate(question_containers[:20]):  # change number of questions as needed
+for question_index, question_container in enumerate(question_containers[:TOTAL_QUESTIONS]):  
+    print(f"\nanswering question {question_index + 1} of {TOTAL_QUESTIONS}...")
+
     # get the question text
     question_text = question_container.find_element(By.CLASS_NAME, "question-text-class").text  # replace with actual class
 
@@ -130,9 +141,16 @@ for question_index, question_container in enumerate(question_containers[:20]):  
     for option_element in option_elements:
         options.append(option_element.text)
 
-    # answer correctly
-    correct_answer = generate_answer(question_text, options)
+    # determine if we should answer correctly or incorrectly
+    if answered_correctly < CORRECT_ANSWERS:
+        correct_answer = generate_answer(question_text, options)
+        answered_correctly += 1
+    else:
+        incorrect_options = [opt for opt in options if opt != generate_answer(question_text, options)]
+        correct_answer = random.choice(incorrect_options)
+        answered_incorrectly += 1
 
+    # select the answer
     for option_element in option_elements:
         if option_element.text.strip() == correct_answer:
             option_element.click()
@@ -143,6 +161,15 @@ for question_index, question_container in enumerate(question_containers[:20]):  
     submit_button = question_container.find_element(By.CLASS_NAME, "submit-button-class")  # replace with actual class
     submit_button.click()
     adaptive_delay("click")
+
+    # update progress
+    print(f"progress: {answered_correctly} correct, {answered_incorrectly} incorrect")
+
+# final report
+print("\nquiz completed!")
+print(f"total questions answered: {TOTAL_QUESTIONS}")
+print(f"correct answers: {answered_correctly}")
+print(f"incorrect answers: {answered_incorrectly}")
 
 # close the browser
 driver.quit()
