@@ -49,6 +49,29 @@ def adaptive_delay(action_type="default"):
     logging.info(f"Delaying for {delay:.2f} seconds ({action_type})")
     time.sleep(delay)
 
+def solve_captcha(driver):
+    try:
+        captcha_element = driver.find_element(By.CLASS_NAME, "captcha-class")
+        captcha_src = captcha_element.get_attribute("src")
+        logging.info("Captcha detected, attempting to solve.")
+        
+        # send captcha to external solver (example API)
+        response = requests.post("https://api.captchasolver.com/solve", json={"image_url": captcha_src})
+        captcha_solution = response.json().get("solution")
+        
+        if captcha_solution:
+            captcha_input = driver.find_element(By.CLASS_NAME, "captcha-input-class")
+            captcha_input.send_keys(captcha_solution)
+            adaptive_delay("captcha")
+            submit_button = driver.find_element(By.CLASS_NAME, "captcha-submit-class")
+            submit_button.click()
+            adaptive_delay("click")
+            logging.info("Captcha solved successfully.")
+        else:
+            logging.error("Failed to retrieve captcha solution.")
+    except Exception as e:
+        logging.info("No captcha detected or solving failed.")
+
 def setup_browser():
     options = uc.ChromeOptions()
     options.add_argument("--headless")
@@ -76,6 +99,8 @@ def navigate_and_answer(driver):
     login_button.click()
     adaptive_delay("click")
     logging.info("Logged in successfully.")
+    
+    solve_captcha(driver)
 
     for _ in range(total_questions):
         try:
