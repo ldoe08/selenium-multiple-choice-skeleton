@@ -1,5 +1,5 @@
 import undetected_chromedriver.v2 as uc
-import openai
+import google.generativeai as genai
 import random
 import time
 import requests
@@ -15,8 +15,8 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-# openai api key
-openai.api_key = "your_openai_api_key"
+# gemini api key
+genai.configure(api_key="your_gemini_api_key")
 
 # settings
 total_questions = 20  # number of questions to answer
@@ -33,12 +33,9 @@ def generate_answer(question, options):
     Options: {', '.join(options)}
     Pick the best option from the list of answers and only return the option text.
     """
-    response = openai.Completion.create(
-        engine="text-davinci-003",
-        prompt=prompt,
-        max_tokens=50
-    )
-    return response["choices"][0]["text"].strip()
+    model = genai.GenerativeModel("gemini-1.5-flash-latest")
+    response = model.generate_content(prompt)
+    return response.text.strip()
 
 def adaptive_delay(action_type="default"):
     delay_times = {
