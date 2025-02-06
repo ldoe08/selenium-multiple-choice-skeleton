@@ -33,12 +33,12 @@ def generate_answer(question, options):
     Options: {', '.join(options)}
     Pick the best option from the list of answers and only return the option text.
     """
-    response = openai.Completion.create(
-        engine="text-davinci-003",
-        prompt=prompt,
-        max_tokens=50
+    response = openai.ChatCompletion.create(
+        model="gpt-4",
+        messages=[{"role": "system", "content": "You are a helpful AI answering multiple-choice questions."},
+                  {"role": "user", "content": prompt}]
     )
-    return response["choices"][0]["text"].strip()
+    return response["choices"][0]["message"]["content"].strip()
 
 def adaptive_delay(action_type="default"):
     delay_times = {
@@ -51,6 +51,29 @@ def adaptive_delay(action_type="default"):
     delay = random.uniform(min_time, max_time)
     logging.info(f"Delaying for {delay:.2f} seconds ({action_type})")
     time.sleep(delay)
+
+def solve_captcha(driver):
+    try:
+        captcha_element = driver.find_element(By.CLASS_NAME, "captcha-class")
+        captcha_src = captcha_element.get_attribute("src")
+        logging.info("Captcha detected, attempting to solve.")
+        
+        # send captcha to external solver (example API)
+        response = requests.post("https://api.captchasolver.com/solve", json={"image_url": captcha_src})
+        captcha_solution = response.json().get("solution")
+        
+        if captcha_solution:
+            captcha_input = driver.find_element(By.CLASS_NAME, "captcha-input-class")
+            captcha_input.send_keys(captcha_solution)
+            adaptive_delay("captcha")
+            submit_button = driver.find_element(By.CLASS_NAME, "captcha-submit-class")
+            submit_button.click()
+            adaptive_delay("click")
+            logging.info("Captcha solved successfully.")
+        else:
+            logging.error("Failed to retrieve captcha solution.")
+    except Exception as e:
+        logging.info("No captcha detected or solving failed.")
 
 def setup_browser():
     options = uc.ChromeOptions()
@@ -79,6 +102,8 @@ def navigate_and_answer(driver):
     login_button.click()
     adaptive_delay("click")
     logging.info("Logged in successfully.")
+    
+    solve_captcha(driver)
 
     for _ in range(total_questions):
         try:
