@@ -1,10 +1,13 @@
 import undetected_chromedriver.v2 as uc
 import openai
+import google.generativeai as genai
 import random
 import time
 import requests
 import logging
 import threading
+import tkinter as tk
+from tkinter import ttk
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 
@@ -15,19 +18,21 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-# openai api key
+# api keys
 openai.api_key = "your_openai_api_key"
+genai.configure(api_key="your_gemini_api_key")
 
 # settings
-total_questions = 20  # number of questions to answer
-correct_answers = 15  # number of correct answers
-incorrect_answers = total_questions - correct_answers  # incorrect answers count
+total_questions = 20
+correct_answers = 15
+incorrect_answers = total_questions - correct_answers
+use_openai = True
 
 # track progress
 answered_correctly = 0
 answered_incorrectly = 0
 
-def generate_answer(question, options):
+def generate_answer_openai(question, options, confidence=0.8):
     prompt = f"""
     Question: {question}
     Options: {', '.join(options)}
@@ -38,7 +43,27 @@ def generate_answer(question, options):
         messages=[{"role": "system", "content": "You are a helpful AI answering multiple-choice questions."},
                   {"role": "user", "content": prompt}]
     )
-    return response["choices"][0]["message"]["content"].strip()
+    correct_answer = response["choices"][0]["message"]["content"].strip()
+    
+    if random.random() > confidence:
+        incorrect_options = [opt for opt in options if opt != correct_answer]
+        return random.choice(incorrect_options) if incorrect_options else correct_answer
+    return correct_answer
+
+def generate_answer_gemini(question, options, confidence=0.8):
+    prompt = f"""
+    Question: {question}
+    Options: {', '.join(options)}
+    Pick the best option from the list of answers and only return the option text.
+    """
+    model = genai.GenerativeModel("gemini-1.5-flash-latest")
+    response = model.generate_content(prompt)
+    correct_answer = response.text.strip()
+    
+    if random.random() > confidence:
+        incorrect_options = [opt for opt in options if opt != correct_answer]
+        return random.choice(incorrect_options) if incorrect_options else correct_answer
+    return correct_answer
 
 def adaptive_delay(action_type="default"):
     delay_times = {
@@ -51,29 +76,6 @@ def adaptive_delay(action_type="default"):
     delay = random.uniform(min_time, max_time)
     logging.info(f"Delaying for {delay:.2f} seconds ({action_type})")
     time.sleep(delay)
-
-def solve_captcha(driver):
-    try:
-        captcha_element = driver.find_element(By.CLASS_NAME, "captcha-class")
-        captcha_src = captcha_element.get_attribute("src")
-        logging.info("Captcha detected, attempting to solve.")
-        
-        # send captcha to external solver (example API)
-        response = requests.post("https://api.captchasolver.com/solve", json={"image_url": captcha_src})
-        captcha_solution = response.json().get("solution")
-        
-        if captcha_solution:
-            captcha_input = driver.find_element(By.CLASS_NAME, "captcha-input-class")
-            captcha_input.send_keys(captcha_solution)
-            adaptive_delay("captcha")
-            submit_button = driver.find_element(By.CLASS_NAME, "captcha-submit-class")
-            submit_button.click()
-            adaptive_delay("click")
-            logging.info("Captcha solved successfully.")
-        else:
-            logging.error("Failed to retrieve captcha solution.")
-    except Exception as e:
-        logging.info("No captcha detected or solving failed.")
 
 def setup_browser():
     options = uc.ChromeOptions()
@@ -90,76 +92,58 @@ def navigate_and_answer(driver):
     global answered_correctly, answered_incorrectly
     driver.get("https://example.com/login")
     logging.info("Opened login page.")
-
-    # login
-    username = driver.find_element(By.ID, "username")
-    password = driver.find_element(By.ID, "password")
-    login_button = driver.find_element(By.ID, "login-button")
-    username.send_keys("your_username")
-    adaptive_delay("typing")
-    password.send_keys("your_password")
-    adaptive_delay("typing")
-    login_button.click()
-    adaptive_delay("click")
-    logging.info("Logged in successfully.")
     
-    solve_captcha(driver)
-
     for _ in range(total_questions):
         try:
             question_text = driver.find_element(By.CLASS_NAME, "question-text-class").text
             option_elements = driver.find_elements(By.CLASS_NAME, "option-class")
             options = [option.text for option in option_elements]
-
-            if answered_correctly < correct_answers:
-                selected_answer = generate_answer(question_text, options)
-                answered_correctly += 1
-            else:
-                incorrect_options = [opt for opt in options if opt != generate_answer(question_text, options)]
-                selected_answer = random.choice(incorrect_options)
-                answered_incorrectly += 1
-
+            
+            selected_answer = generate_answer_openai(question_text, options) if use_openai else generate_answer_gemini(question_text, options)
+            
             for option_element in option_elements:
                 if option_element.text.strip() == selected_answer:
                     option_element.click()
                     adaptive_delay("click")
                     break
-
+            
             submit_button = driver.find_element(By.CLASS_NAME, "submit-button-class")
             submit_button.click()
             adaptive_delay("click")
-
-            # verify answer submission
-            result_text = driver.find_element(By.CLASS_NAME, "result-class").text
-            if "correct" in result_text.lower():
-                logging.info(f"Question answered correctly: {question_text}")
-            else:
-                logging.info(f"Question answered incorrectly: {question_text}")
-
-            # handle multi-page navigation
-            try:
-                next_button = driver.find_element(By.CLASS_NAME, "next-page-class")
-                next_button.click()
-                adaptive_delay("click")
-                logging.info("Navigated to next page.")
-            except:
-                logging.info("No next page button found.")
+            logging.info(f"Answered: {question_text}")
         except Exception as e:
             logging.error(f"Error answering question: {e}")
-
-    logging.info(f"Quiz completed! Correct: {answered_correctly}, Incorrect: {answered_incorrectly}")
     driver.quit()
 
-# parallel execution using threading
-def start_parallel_sessions(session_count=2):
-    threads = []
-    for _ in range(session_count):
-        driver = setup_browser()
-        thread = threading.Thread(target=navigate_and_answer, args=(driver,))
-        threads.append(thread)
-        thread.start()
-    for thread in threads:
-        thread.join()
+def start_script():
+    global total_questions, correct_answers, incorrect_answers, use_openai
+    total_questions = int(entry_questions.get())
+    correct_answers = int(entry_correct.get())
+    incorrect_answers = total_questions - correct_answers
+    use_openai = api_var.get() == "OpenAI"
+    
+    threading.Thread(target=navigate_and_answer, args=(setup_browser(),)).start()
 
-if __name__ == "__main__":
-    start_parallel_sessions(session_count=2)
+# tkinter gui
+root = tk.Tk()
+root.title("Quiz Bot Configurator")
+
+tk.Label(root, text="Total Questions:").grid(row=0, column=0)
+entry_questions = tk.Entry(root)
+entry_questions.grid(row=0, column=1)
+entry_questions.insert(0, "20")
+
+tk.Label(root, text="Correct Answers:").grid(row=1, column=0)
+entry_correct = tk.Entry(root)
+entry_correct.grid(row=1, column=1)
+entry_correct.insert(0, "15")
+
+api_var = tk.StringVar(value="OpenAI")
+openai_radio = ttk.Radiobutton(root, text="OpenAI", variable=api_var, value="OpenAI")
+gemini_radio = ttk.Radiobutton(root, text="Gemini", variable=api_var, value="Gemini")
+openai_radio.grid(row=2, column=0)
+gemini_radio.grid(row=2, column=1)
+
+tk.Button(root, text="Start", command=start_script).grid(row=3, columnspan=2)
+
+root.mainloop()
