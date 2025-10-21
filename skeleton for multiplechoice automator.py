@@ -47,7 +47,7 @@ def generate_answer_openai(question, options, confidence=0.8):
     """
     response = openai.ChatCompletion.create(
         model="gpt-4",
-        messages=[{"role": "system", "content": "You are a helpful AI answering multiple-choice questions."},
+        messages=[{"role": "system", "content": "You are a helpful AI answering multiple-choice questions. It will be multiple choice, and as such you should only choose one of the options. Any answers such as I don't know should be ignored. "},
                   {"role": "user", "content": prompt}]
     )
     correct_answer = response["choices"][0]["message"]["content"].strip()
